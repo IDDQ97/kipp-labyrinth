@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"><meta name="apple-mobile-web-app-capable" content="yes"><style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);box-sizing:border-box}body{margin:0}</style></head><body>
+<title>Kipp-Labyrinth</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Caveat:wght@600&display=swap">
+<style>
+/* Layout: Produktfoto einer Holzkiste. Hell, ruhig, die Kiste ist das Einzige, was zählt.
+   Kiste steht fest, nur das Brett darin kippt. Knöpfe sitzen aussen an der Kiste (vorne + rechts) wie beim Original.
+   Bewusst nur ein heller Look. */
+:root{
+  --backdrop:#e7e4de; --backdrop-edge:#cfcac1; --ink:#3a2a1d; --muted:#7b6a58; --line:#bdb3a5;
+  --paper:#fbf8f2; --burn:#5a3416; --goal:#2f6b3a;
+  --ui:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --hand:"Caveat","Bradley Hand","Segoe Print",cursive;
+  --mm:2px; /* Pixel pro Millimeter, wird per Skript gesetzt */
+  color-scheme:light;
+}
+html,body{height:100%;touch-action:manipulation;overscroll-behavior:none}
+body{background:radial-gradient(ellipse at 50% 45%,var(--backdrop) 40%,var(--backdrop-edge) 100%);color:var(--ink);font:15px/1.35 var(--ui);
+  overflow:hidden;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+[hidden]{display:none!important}
+.room{height:100%;display:grid;grid-template-rows:auto minmax(0,1fr);grid-template-columns:minmax(0,1fr);box-sizing:border-box;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:10px 12px}
+
+/* Werkzeugleiste: Text-Reiter für die Stufe, kleine runde Symbolknöpfe */
+.tools{display:flex;align-items:center;gap:8px 22px;flex-wrap:wrap}
+.name{font:700 17px var(--ui);letter-spacing:.01em}
+.levels{display:flex;gap:18px}
+.levels button{font:400 15px var(--ui);color:var(--muted);background:none;border:0;padding:8px 0;cursor:pointer;border-bottom:2px solid transparent;min-height:40px}
+.levels button[aria-pressed="true"]{color:var(--ink);font-weight:700;border-bottom-color:var(--ink)}
+.icons{margin-left:auto;display:flex;gap:8px;align-items:center}
+.ib{width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:var(--paper);color:var(--ink);display:grid;place-items:center;cursor:pointer;padding:0}
+.ib svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.ib[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.ib:active,.levels button:active{transform:translateY(1px)}
+.sep{width:1px;height:26px;background:var(--line);margin:0 4px}
+button:focus-visible,.knob:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
+
+/* Bühne mit Kiste */
+.stage{min-width:0;min-height:0;display:flex;align-items:center;justify-content:center}
+.box{position:relative;filter:drop-shadow(0 calc(var(--mm)*5) calc(var(--mm)*6) rgba(60,40,20,.28))}
+.box>canvas{display:block}
+.tray{position:absolute;perspective:calc(var(--mm)*900);transform-style:preserve-3d}
+.tray canvas{display:block;touch-action:none;transition:transform 60ms linear;box-shadow:0 0 calc(var(--mm)*2) rgba(40,20,5,.5)}
+/* Eingebrannte Schrift auf der vorderen Kistenwand */
+.burn{position:absolute;display:flex;gap:calc(var(--mm)*9);align-items:center;font:700 calc(var(--mm)*5.2) var(--ui);color:var(--burn);
+  opacity:.82;text-shadow:0 0 calc(var(--mm)*.6) rgba(90,52,22,.55);font-variant-numeric:tabular-nums;white-space:nowrap;pointer-events:none}
+.burn.top{opacity:.7;font-weight:400}
+
+/* Drehknöpfe: schwarz gedrechselt, weisser Punkt als Markierung */
+.knob{position:absolute;border-radius:50%;touch-action:none;cursor:grab;transform:translate(-50%,-50%);
+  background:radial-gradient(circle at 38% 32%,#55504b 0%,#26221f 45%,#0f0d0c 80%);
+  box-shadow:0 calc(var(--mm)*2) calc(var(--mm)*3) rgba(0,0,0,.45),inset 0 0 0 calc(var(--mm)*1.4) rgba(255,255,255,.05)}
+.knob i{position:absolute;left:50%;top:12%;width:14%;aspect-ratio:1;margin-left:-7%;border-radius:50%;background:#eae3d6}
+.knob .rot{position:absolute;inset:0;border-radius:50%}
+.knob.off{filter:saturate(0) brightness(1.6);opacity:.45;cursor:default}
+
+/* Zettel (Gewonnen / Hinweise) */
+.note{background:var(--paper);color:var(--ink);box-shadow:0 6px 18px rgba(60,40,20,.25);border-radius:2px}
+.overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(40,25,10,.18)}
+.card{padding:18px 26px 16px;text-align:center;display:flex;flex-direction:column;gap:6px;align-items:center;transform:rotate(-1.5deg)}
+.card h2{font:600 40px/1 var(--hand);margin:0}
+.card p{margin:0;color:var(--muted)}
+.card button{margin-top:6px;font:700 15px var(--ui);color:var(--paper);background:var(--ink);border:0;border-radius:22px;padding:10px 20px;cursor:pointer}
+.toast{position:fixed;left:50%;top:calc(64px + env(safe-area-inset-top,0px));transform:translateX(-50%) rotate(-.6deg);padding:10px 16px;max-width:min(480px,88vw);z-index:5;font-size:15px}
+.portrait{display:none;position:fixed;left:50%;bottom:calc(14px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);padding:8px 14px;z-index:6;font-weight:700}
+@media (orientation:portrait) and (max-width:1100px){.portrait{display:block}}
+@media (prefers-reduced-motion:reduce){.tray canvas{transition:none}}
+</style>
+
+<div class="room">
+  <header class="tools">
+    <span class="name">Kipp-Labyrinth</span>
+    <nav class="levels" aria-label="Stufe">
+      <button type="button" id="lvl0" aria-pressed="true">1.–3. Klasse</button>
+      <button type="button" id="lvl1" aria-pressed="false">4.–6. Klasse</button>
+    </nav>
+    <div class="icons">
+      <button type="button" class="ib" id="modeKnob" aria-pressed="true" aria-label="Mit Drehknöpfen spielen" title="Drehknöpfe">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4v4"/></svg></button>
+      <button type="button" class="ib" id="modeGyro" aria-pressed="false" aria-label="Mit iPad-Neigung spielen" title="iPad kippen">
+        <svg viewBox="0 0 24 24"><rect x="5" y="6" width="14" height="12" rx="2" transform="rotate(-12 12 12)"/><path d="M3 19c2 1.5 5 2 9 2M21 5c-2-1.5-5-2-9-2"/></svg></button>
+      <span class="sep" aria-hidden="true"></span>
+      <button type="button" class="ib" id="calib" aria-label="Kalibrieren: aktuelle Lage gilt als flach" title="Kalibrieren">
+        <svg viewBox="0 0 24 24"><path d="M3 14h18"/><path d="M7 14a5 5 0 0 1 10 0"/><circle cx="12" cy="14" r="1.2"/></svg></button>
+      <button type="button" class="ib" id="axes" hidden aria-label="Achsen um 90 Grad drehen" title="Achsen drehen">
+        <svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v4h-4"/></svg></button>
+      <button type="button" class="ib" id="restart" aria-label="Neu starten" title="Neu starten">
+        <svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.3-5.6"/><path d="M4 4v4h4"/></svg></button>
+    </div>
+  </header>
+
+  <main class="stage" id="stage">
+    <div class="box" id="box">
+      <canvas id="boxcv" aria-hidden="true"></canvas>
+      <div class="tray" id="tray">
+        <canvas id="cv" aria-label="Spielbrett 280 mal 250 Millimeter"></canvas>
+        <div class="overlay" id="win" hidden>
+          <div class="note card">
+            <h2>Geschafft!</h2>
+            <p id="winText"></p>
+            <button type="button" id="again">Nochmals</button>
+          </div>
+        </div>
+      </div>
+      <div class="burn" id="burn"><span>Zeit <span id="time">0.0</span> s</span><span>Gefallen <span id="falls">0</span></span><span>Bestzeit <span id="best">–</span></span></div>
+      <div class="burn top" id="dbgwrap" hidden><span id="dbg"></span></div>
+      <div class="knob" id="knobX" role="slider" aria-label="Links und rechts kippen" aria-valuemin="-135" aria-valuemax="135" aria-valuenow="0" tabindex="0"><div class="rot"><i></i></div></div>
+      <div class="knob" id="knobY" role="slider" aria-label="Vor und zurück kippen" aria-valuemin="-135" aria-valuemax="135" aria-valuenow="0" tabindex="0"><div class="rot"><i></i></div></div>
+    </div>
+  </main>
+</div>
+<div class="toast note" id="toast" hidden></div>
+<div class="portrait note">iPad quer halten</div>
+
+<script>
+(function(){
+'use strict';
+// ---------- Masse in mm ----------
+var BW=280, BH=250, F=6, BALL_R=5, HOLE_R=7, GOAL_R=9, WALL=4;
+// Kiste: Rand des Kippbretts T, Spalt GAP, Kistenwand KW, sichtbare Vorderseite FRONT
+var T=7, GAP=5, KW=16, FRONT=20;
+var TW=BW+2*T, TH=BH+2*T, OFF=KW+GAP, BOXW=TW+2*OFF, BOXTOP=TH+2*OFF, BOXH=BOXTOP+FRONT, KNOB_MM=30;
+var MAX_TILT=6;           // Grad Neigung der Spielfläche
+var G=9810*5/7;           // rollende Kugel, mm/s²
+var DAMP=1.1, BOUNCE=0.35, VMAX=900, SUB=16; // 16 Teilschritte: max. ~1 mm pro Schritt, Wände sind 4 mm dick
+var GYRO_GAIN=0.5;        // iPad 12° gekippt = Brett 6°
+var GYRO_DEAD=1.0;        // Totzone in Grad (iPad): darunter gilt «flach»
+var GYRO_SMOOTH=0.2;      // Glättung der Sensorwerte (0..1, kleiner = ruhiger)
+var MU=0.004;             // Roll-/Haftreibung Stahlkugel auf Holz: Brett muss >~0.3° kippen, bevor sie rollt
+
+var frame=[[0,0,BW,F],[0,BH-F,BW,F],[0,0,F,BH],[BW-F,0,F,BH]];
+// Brett nach BRIO-Prinzip: echtes Labyrinth auf einem Raster (Zellen = Wegfelder).
+// 1) Zufälliges Labyrinth (Tiefensuche) erzeugen, 2) Route START (unten links) → ZIEL (oben rechts) suchen,
+// 3) Löcher in Sackgassen setzen, 4) bei der schweren Stufe einige Wände an der Route durch «Fallen-Löcher» ersetzen.
+// cols/rows = Raster, deadHole = Anteil Sackgassen mit Loch, trap = Anteil Wände an der Route, die zu Löchern werden
+function buildLevel(name,o){
+  var seed=o.seed; function rnd(){seed=(seed*16807)%2147483647;return (seed-1)/2147483646}
+  var C=o.cols,R=o.rows,sx=(BW-2*F)/C,sy=(BH-2*F)/R,N=C*R;
+  function cx(i){return F+sx*(i%C+.5)} function cy(i){return F+sy*(Math.floor(i/C)+.5)}
+  function nb(i){var c=i%C,r=Math.floor(i/C),a=[];if(c>0)a.push(i-1);if(c<C-1)a.push(i+1);if(r>0)a.push(i-C);if(r<R-1)a.push(i+C);return a}
+  var open={}, key=function(a,b){return a<b?a+'-'+b:b+'-'+a};
+  // Tiefensuche: ergibt verwinkelte Gänge mit Sackgassen
+  var seen=new Array(N).fill(false), stack=[(R-1)*C]; seen[(R-1)*C]=true;
+  while(stack.length){
+    var cur=stack[stack.length-1], cand=nb(cur).filter(function(n){return !seen[n]});
+    if(!cand.length){stack.pop();continue}
+    var nx=cand[Math.floor(rnd()*cand.length)]; open[key(cur,nx)]=true; seen[nx]=true; stack.push(nx);
+  }
+  // Leichte Stufe: ein paar Zusatzdurchgänge, damit es weniger Sackgassen gibt
+  for(var i=0;i<N;i++)nb(i).forEach(function(n){if(n>i&&!open[key(i,n)]&&rnd()<o.braid)open[key(i,n)]=true});
+  // Route per Breitensuche
+  var s0=(R-1)*C, g0=C-1, prev=new Array(N).fill(-1), q=[s0], vis={}; vis[s0]=1;
+  while(q.length){var u=q.shift();if(u===g0)break;nb(u).forEach(function(n){if(open[key(u,n)]&&!vis[n]){vis[n]=1;prev[n]=u;q.push(n)}})}
+  var path=[], onRoute={}; for(var p=g0;p!==-1;p=prev[p]){path.unshift(p);onRoute[p]=true}
+  var walls=[], holes=[], hset=[];
+  function addHole(x,y,idx){ // keine überlappenden Löcher
+    for(var k=0;k<hset.length;k++)if(Math.hypot(hset[k].x-x,hset[k].y-y)<2*HOLE_R+3)return;
+    hset.push({x:x,y:y,idx:idx})}
+  // Wände zwischen nicht verbundenen Nachbarzellen (als Leisten auf den Zellgrenzen)
+  for(i=0;i<N;i++){
+    nb(i).forEach(function(n){
+      if(n<i||open[key(i,n)])return;
+      var trap=o.trap&&(onRoute[i]!==onRoute[n])&&rnd()<o.trap;
+      if(trap){var ri0=path.indexOf(onRoute[i]?i:n);if(ri0<1||ri0>path.length-2)trap=false} // kein Loch direkt bei Start/Ziel
+      var mx=(cx(i)+cx(n))/2, my=(cy(i)+cy(n))/2;
+      if(trap){ // statt Wand ein Loch: wer falsch abbiegt, fällt
+        var ri=onRoute[i]?i:n, ni=onRoute[i]?n:i;
+        addHole(mx+(cx(ni)-cx(ri))*0.08,my+(cy(ni)-cy(ri))*0.08,path.indexOf(ri));return}
+      if(n===i+1)walls.push([mx-WALL/2,cy(i)-sy/2-WALL/2,WALL,sy+WALL]);
+      else walls.push([cx(i)-sx/2-WALL/2,my-WALL/2,sx+WALL,WALL]);
+    });
+  }
+  // Löcher in Sackgassen abseits der Route
+  for(i=0;i<N;i++){
+    if(onRoute[i])continue;
+    var deg=nb(i).filter(function(n){return open[key(i,n)]}).length;
+    if(deg===1&&rnd()<o.deadHole){
+      // Nummer nach dem nächsten Routenfeld, damit die Zählung der Route folgt
+      var best=0,bd=1e9;path.forEach(function(pp,k){var d=Math.hypot(cx(pp)-cx(i),cy(pp)-cy(i));if(d<bd){bd=d;best=k}});
+      addHole(cx(i),cy(i),best+0.5);
+    }
+  }
+  hset.sort(function(a,b){return a.idx-b.idx});
+  hset.forEach(function(h){holes.push([h.x,h.y])});
+  var route=path.map(function(pp){return [cx(pp),cy(pp)]});
+  return {name:name,start:route[0].slice(),goal:route[route.length-1].slice(),walls:walls,holes:holes,route:route};
+}
+var LEVELS=[
+  // Startwerte ausgesucht: lange Route, viele Löcher (1.–3.: 30 Felder, 8 Löcher · 4.–6.: 50 Felder, 32 Löcher)
+  buildLevel('1.–3. Klasse',{cols:7,rows:6,seed:2399457,braid:0.12,deadHole:0.8,trap:0.1}),
+  buildLevel('4.–6. Klasse',{cols:10,rows:9,seed:3460603,braid:0.03,deadHole:1,trap:0.5})
+];
+
+// ---------- Zustand ----------
+var lvl=0, L=null, walls=[];
+var ball={x:0,y:0,vx:0,vy:0,fall:0};
+var tilt={x:0,y:0}, knob={x:0,y:0};
+var mode='knob', gyro={raw:null,base:null,on:false,seen:false};
+var running=false, won=false, t0=0, elapsed=0, falls=0;
+var scale=1, dpr=1;
+var cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+var bcv=document.getElementById('boxcv'), bctx=bcv.getContext('2d');
+var $=function(id){return document.getElementById(id)};
+
+function store(k,v){try{if(v===undefined)return localStorage.getItem(k);localStorage.setItem(k,v)}catch(e){return null}}
+function seeded(s){return function(){s=(s*16807)%2147483647;return s/2147483647}}
+
+// ---------- Holzmaserung (fest pro Brett) ----------
+var grain=[];
+function makeGrain(){
+  var rnd=seeded(7);
+  grain=[];for(var i=0;i<46;i++)grain.push({y:rnd()*BH,a:rnd()*6+1,f:rnd()*0.05+0.01,p:rnd()*6,o:rnd()*0.08+0.03});
+}
+
+// ---------- Level ----------
+function load(i){
+  lvl=i; L=LEVELS[i]; walls=frame.concat(L.walls);
+  $('lvl0').setAttribute('aria-pressed',i===0);$('lvl1').setAttribute('aria-pressed',i===1);
+  falls=0; reset(true); showBest();
+}
+function reset(full){
+  ball.x=L.start[0];ball.y=L.start[1];ball.vx=0;ball.vy=0;ball.fall=0;
+  if(full){running=false;won=false;elapsed=0;falls=0;$('win').hidden=true}
+  updStats();
+}
+function showBest(){var b=store('kipp-best-'+lvl);$('best').textContent=b?(+b).toFixed(1)+' s':'–'}
+function updStats(){$('time').textContent=elapsed.toFixed(1);$('falls').textContent=falls}
+
+// ---------- Physik ----------
+function collide(w){
+  var cx=Math.max(w[0],Math.min(ball.x,w[0]+w[2])), cy=Math.max(w[1],Math.min(ball.y,w[1]+w[3]));
+  var dx=ball.x-cx, dy=ball.y-cy, d2=dx*dx+dy*dy;
+  if(d2>=BALL_R*BALL_R)return;
+  var nx,ny,d;
+  if(d2===0){ // Mitte im Rechteck: kürzester Weg hinaus
+    var l=ball.x-w[0], r=w[0]+w[2]-ball.x, t=ball.y-w[1], b=w[1]+w[3]-ball.y, m=Math.min(l,r,t,b);
+    nx=m===l?-1:m===r?1:0; ny=m===t?-1:m===b?1:0; if(nx&&ny)ny=0;
+    ball.x=nx<0?w[0]-BALL_R:nx>0?w[0]+w[2]+BALL_R:ball.x;
+    ball.y=ny<0?w[1]-BALL_R:ny>0?w[1]+w[3]+BALL_R:ball.y;
+  }else{
+    d=Math.sqrt(d2);nx=dx/d;ny=dy/d;ball.x=cx+nx*BALL_R;ball.y=cy+ny*BALL_R;
+  }
+  var vn=ball.vx*nx+ball.vy*ny;
+  if(vn<0){ball.vx-=(1+BOUNCE)*vn*nx;ball.vy-=(1+BOUNCE)*vn*ny}
+}
+function step(dt){
+  if(won)return;
+  if(ball.fall>0){ball.fall+=dt;if(ball.fall>0.45){falls++;reset(false)}return}
+  var ax=G*Math.sin(tilt.x*Math.PI/180), ay=G*Math.sin(tilt.y*Math.PI/180);
+  var thr=mode==='gyro'?1.5:0.4;
+  if(!running&&(Math.abs(tilt.x)>thr||Math.abs(tilt.y)>thr)){running=true;t0=performance.now()-elapsed*1000}
+  var h=dt/SUB;
+  for(var s=0;s<SUB;s++){
+    // Haftreibung: liegt die Kugel still und ist die Neigung zu klein, bleibt sie liegen
+    var fr=MU*9810, a=Math.hypot(ax,ay), v=Math.hypot(ball.vx,ball.vy);
+    if(v<4&&a<=fr){ball.vx=0;ball.vy=0}
+    else{
+      ball.vx+=ax*h;ball.vy+=ay*h;
+      v=Math.hypot(ball.vx,ball.vy); // Rollreibung bremst gegen die Laufrichtung
+      if(v>0){var nv=Math.max(0,v-fr*h);ball.vx*=nv/v;ball.vy*=nv/v}
+    }
+    var k=Math.max(0,1-DAMP*h);ball.vx*=k;ball.vy*=k;
+    var sp=Math.hypot(ball.vx,ball.vy);if(sp>VMAX){ball.vx*=VMAX/sp;ball.vy*=VMAX/sp}
+    ball.x+=ball.vx*h;ball.y+=ball.vy*h;
+    for(var i=0;i<walls.length;i++)collide(walls[i]);
+    if(checkHoles())return;
+  }
+}
+// Loch und Ziel in jedem Teilschritt prüfen, damit eine schnelle Kugel nicht darüber hinwegrollt
+function checkHoles(){
+  for(var j=0;j<L.holes.length;j++){
+    var o=L.holes[j];
+    if(Math.hypot(ball.x-o[0],ball.y-o[1])<HOLE_R-1.5){ball.fall=0.0001;ball.x=o[0];ball.y=o[1];ball.vx=ball.vy=0;return true}
+  }
+  if(Math.hypot(ball.x-L.goal[0],ball.y-L.goal[1])<GOAL_R-2){finish();return true}
+  return false;
+}
+function finish(){
+  won=true;running=false;
+  var b=+store('kipp-best-'+lvl)||0, rec=!b||elapsed<b;
+  if(rec)store('kipp-best-'+lvl,elapsed.toFixed(2));
+  showBest();
+  $('winText').textContent=elapsed.toFixed(1)+' s · '+falls+'× gefallen'+(rec?' · neue Bestzeit':'');
+  $('win').hidden=false;
+}
+
+// ---------- Grösse ----------
+function px(mm){return (mm*scale)+'px'}
+function fit(){
+  var st=$('stage').getBoundingClientRect();
+  // Platz für den rechten Knopf, der seitlich aus der Kiste ragt
+  // Knöpfe ragen rechts und unten aus der Kiste: diesen Überstand beim Einpassen mitrechnen
+  var kpx=function(sc){return Math.max(72,KNOB_MM*sc)};
+  scale=1;
+  for(var it=0;it<3;it++){var kk=kpx(scale)/scale;
+    scale=Math.max(0.5,Math.min((st.width-8)/(BOXW+kk*0.5),(st.height-8)/(BOXTOP+FRONT*0.55+kk*0.5)))}
+  dpr=Math.min(window.devicePixelRatio||1,3);
+  document.documentElement.style.setProperty('--mm',scale+'px');
+  var box=$('box');box.style.width=px(BOXW);box.style.height=px(BOXH);
+  var over=kpx(scale)/2;
+  box.style.marginRight=over+'px';box.style.marginBottom=Math.max(0,over-FRONT*0.45*scale)+'px';
+  bcv.style.width=px(BOXW);bcv.style.height=px(BOXH);bcv.width=Math.round(BOXW*scale*dpr);bcv.height=Math.round(BOXH*scale*dpr);
+  var tr=$('tray');tr.style.left=px(OFF);tr.style.top=px(OFF);tr.style.width=px(TW);tr.style.height=px(TH);
+  cv.style.width=px(TW);cv.style.height=px(TH);cv.width=Math.round(TW*scale*dpr);cv.height=Math.round(TH*scale*dpr);
+  // Knöpfe: einer vorne (links/rechts), einer an der rechten Seite (vor/zurück); mind. 72 px gross für den Daumen
+  var k=Math.max(72,KNOB_MM*scale)+'px';
+  var kx=$('knobX');kx.style.width=kx.style.height=k;kx.style.left=px(BOXW*0.36);kx.style.top=px(BOXTOP+FRONT*0.55);
+  var ky=$('knobY');ky.style.width=ky.style.height=k;ky.style.left=px(BOXW);ky.style.top=px(BOXTOP*0.5);
+  // Eingebrannte Anzeigen auf den Wänden
+  var bu=$('burn');bu.style.left=px(BOXW*0.36+KNOB_MM*0.9);bu.style.top=px(BOXTOP+FRONT*0.55);bu.style.transform='translateY(-50%)';
+  var dw=$('dbgwrap');dw.style.left=px(OFF+T);dw.style.top=px(KW/2);dw.style.transform='translateY(-50%)';
+  drawBox();
+}
+
+// ---------- Kiste zeichnen (einmal pro Grösse) ----------
+function woodRect(c,x,y,w,h,base,dark,along,seed){
+  c.fillStyle=base;c.fillRect(x,y,w,h);
+  var rnd=seeded(seed);c.save();c.beginPath();c.rect(x,y,w,h);c.clip();c.lineWidth=0.45;
+  var n=Math.round((along==='x'?h:w)/1.6);
+  for(var i=0;i<n;i++){
+    c.strokeStyle='rgba('+dark+','+(0.05+rnd()*0.12)+')';c.beginPath();
+    var o=(along==='x'?y:x)+rnd()*(along==='x'?h:w), amp=rnd()*1.2, f=0.01+rnd()*0.04, ph=rnd()*6;
+    if(along==='x'){for(var t=x;t<=x+w;t+=6){var yy=o+Math.sin(t*f+ph)*amp;t===x?c.moveTo(t,yy):c.lineTo(t,yy)}}
+    else{for(t=y;t<=y+h;t+=6){var xx=o+Math.sin(t*f+ph)*amp;t===y?c.moveTo(xx,t):c.lineTo(xx,t)}}
+    c.stroke();
+  }
+  c.restore();
+}
+function endGrain(c,x,y,w,h,seed){ // Hirnholz mit Jahrringen
+  c.fillStyle='#d7ab6c';c.fillRect(x,y,w,h);
+  var rnd=seeded(seed),cx=x+w*(rnd()*1.6-0.3),cy=y+h*(1.2+rnd());
+  c.save();c.beginPath();c.rect(x,y,w,h);c.clip();c.strokeStyle='rgba(120,70,25,.35)';c.lineWidth=0.4;
+  for(var r=2;r<60;r+=1.6+rnd()){c.beginPath();c.arc(cx,cy,r,0,7);c.stroke()}
+  c.restore();
+}
+function drawBox(){
+  var c=bctx,s=scale*dpr;c.setTransform(s,0,0,s,0,0);c.clearRect(0,0,BOXW,BOXH);
+  var pine='#e8c890',pineDark='120,75,25';
+  // Oberseite der Wände: vorne/hinten laufen durch, links/rechts dazwischen (Zinken an den Ecken)
+  woodRect(c,0,0,BOXW,KW,pine,pineDark,'x',11);
+  woodRect(c,0,BOXTOP-KW,BOXW,KW,pine,pineDark,'x',12);
+  woodRect(c,0,KW,KW,BOXTOP-2*KW,'#e4c286',pineDark,'y',13);
+  woodRect(c,BOXW-KW,KW,KW,BOXTOP-2*KW,'#e4c286',pineDark,'y',14);
+  // Fugen an den Ecken
+  c.strokeStyle='rgba(110,65,20,.45)';c.lineWidth=0.5;
+  [[0,KW,KW,KW],[BOXW-KW,KW,BOXW,KW],[0,BOXTOP-KW,KW,BOXTOP-KW],[BOXW-KW,BOXTOP-KW,BOXW,BOXTOP-KW]].forEach(function(l){c.beginPath();c.moveTo(l[0],l[1]);c.lineTo(l[2],l[3]);c.stroke()});
+  // Innenraum (Schatten unter dem Kippbrett)
+  var g=c.createLinearGradient(0,KW,0,BOXTOP-KW);g.addColorStop(0,'#5b3d22');g.addColorStop(1,'#7a5530');
+  c.fillStyle=g;c.fillRect(KW,KW,BOXW-2*KW,BOXTOP-2*KW);
+  // Kante oben (Lichtkante) und Innenkante (Schatten)
+  c.fillStyle='rgba(255,245,220,.5)';c.fillRect(0,0,BOXW,0.7);
+  c.strokeStyle='rgba(60,35,10,.5)';c.lineWidth=0.8;c.strokeRect(KW,KW,BOXW-2*KW,BOXTOP-2*KW);
+  // Vorderseite der Kiste mit Fingerzinken links und rechts
+  woodRect(c,0,BOXTOP,BOXW,FRONT,'#d9b276',pineDark,'x',15);
+  var fz=FRONT/4;
+  for(var i=0;i<4;i++){if(i%2===0){endGrain(c,0,BOXTOP+i*fz,KW*0.75,fz,20+i);endGrain(c,BOXW-KW*0.75,BOXTOP+i*fz,KW*0.75,fz,30+i)}}
+  c.strokeStyle='rgba(110,65,20,.35)';c.lineWidth=0.35;
+  for(i=0;i<=4;i++){c.beginPath();c.moveTo(0,BOXTOP+i*fz);c.lineTo(KW*0.75,BOXTOP+i*fz);c.moveTo(BOXW,BOXTOP+i*fz);c.lineTo(BOXW-KW*0.75,BOXTOP+i*fz);c.stroke()}
+  c.beginPath();c.moveTo(KW*0.75,BOXTOP);c.lineTo(KW*0.75,BOXH);c.moveTo(BOXW-KW*0.75,BOXTOP);c.lineTo(BOXW-KW*0.75,BOXH);c.stroke();
+  // Kante zwischen Ober- und Vorderseite
+  c.fillStyle='rgba(255,240,210,.55)';c.fillRect(0,BOXTOP,BOXW,0.6);
+  var sh=c.createLinearGradient(0,BOXTOP,0,BOXH);sh.addColorStop(0,'rgba(0,0,0,0)');sh.addColorStop(1,'rgba(70,40,10,.18)');c.fillStyle=sh;c.fillRect(0,BOXTOP,BOXW,FRONT);
+}
+
+// ---------- Brett zeichnen (jedes Bild) ----------
+function draw(){
+  var s=scale*dpr;
+  // Rahmen des Kippbretts (helle Buche)
+  ctx.setTransform(s,0,0,s,0,0);
+  ctx.fillStyle='#efd9ad';ctx.fillRect(0,0,TW,TH);
+  ctx.fillStyle='rgba(255,250,235,.6)';ctx.fillRect(0,0,TW,0.6);
+  ctx.setTransform(s,0,0,s,T*s,T*s);
+  // Birkensperrholz
+  ctx.fillStyle='#e9d4a9';ctx.fillRect(0,0,BW,BH);
+  ctx.lineWidth=0.6;
+  for(var i=0;i<grain.length;i++){var g=grain[i];ctx.strokeStyle='rgba(120,80,30,'+g.o+')';ctx.beginPath();
+    for(var x=0;x<=BW;x+=10){var y=g.y+Math.sin(x*g.f+g.p)*g.a;x?ctx.lineTo(x,y):ctx.moveTo(x,y)}ctx.stroke()}
+  // Gestrichelte Route wie auf dem BRIO-Brett
+  ctx.strokeStyle='rgba(70,45,20,.55)';ctx.lineWidth=0.7;ctx.setLineDash([3,2.2]);ctx.beginPath();
+  for(var q=0;q<L.route.length;q++){q?ctx.lineTo(L.route[q][0],L.route[q][1]):ctx.moveTo(L.route[q][0],L.route[q][1])}
+  ctx.stroke();ctx.setLineDash([]);
+  ctx.textAlign='center';ctx.textBaseline='middle';
+  // Ziel
+  var gl=L.goal;ctx.fillStyle='#2f6b3a';ctx.beginPath();ctx.arc(gl[0],gl[1],GOAL_R,0,7);ctx.fill();
+  ctx.fillStyle='#eef3e6';ctx.font='700 4.6px "Atkinson Hyperlegible",sans-serif';ctx.fillText('ZIEL',gl[0],gl[1]);
+  // Löcher mit Nummern
+  for(var j=0;j<L.holes.length;j++){var o=L.holes[j];
+    var rg=ctx.createRadialGradient(o[0]-1.2,o[1]-1.2,1,o[0],o[1],HOLE_R);rg.addColorStop(0,'#000');rg.addColorStop(.78,'#16110d');rg.addColorStop(1,'#6a4a2b');
+    ctx.fillStyle=rg;ctx.beginPath();ctx.arc(o[0],o[1],HOLE_R,0,7);ctx.fill();
+    ctx.fillStyle='rgba(70,45,20,.7)';ctx.font='400 4px "Atkinson Hyperlegible",sans-serif';ctx.fillText(String(j+1),o[0]+HOLE_R+3.2,o[1]+HOLE_R-1)}
+  // Leisten: Schatten, dann helle Buche mit runden Enden
+  ctx.fillStyle='rgba(60,35,15,.3)';
+  for(var k=0;k<walls.length;k++){var w=walls[k];rrect(w[0]+1.2,w[1]+1.4,w[2],w[3]);ctx.fill()}
+  for(k=0;k<walls.length;k++){w=walls[k];ctx.fillStyle=k<4?'#c08550':'#e3c48f';rrect(w[0],w[1],w[2],w[3]);ctx.fill();
+    ctx.fillStyle='rgba(255,245,225,.45)';ctx.fillRect(w[0]+0.6,w[1]+0.5,Math.max(0,w[2]-1.2),Math.min(0.9,w[3]))}
+  // START auf dem Rahmen unter dem Startfeld (wird von nichts überdeckt)
+  ctx.fillStyle='#fff3dc';ctx.font='700 4.4px "Atkinson Hyperlegible",sans-serif';
+  ctx.fillText('▲ START',L.start[0],BH-F/2);
+  // Kugel (Stahl)
+  var r=BALL_R*(ball.fall>0?Math.max(0.1,1-ball.fall/0.45):1);
+  ctx.fillStyle='rgba(0,0,0,.25)';ctx.beginPath();ctx.arc(ball.x+1.4,ball.y+1.6,r,0,7);ctx.fill();
+  var bg=ctx.createRadialGradient(ball.x-r*.4,ball.y-r*.45,r*.1,ball.x,ball.y,r);
+  bg.addColorStop(0,'#ffffff');bg.addColorStop(.35,'#c9d2d8');bg.addColorStop(1,'#4b555c');
+  ctx.fillStyle=bg;ctx.beginPath();ctx.arc(ball.x,ball.y,r,0,7);ctx.fill();
+  // Nur das Brett kippt, die Kiste bleibt stehen
+  if(!reduce)cv.style.transform='rotateX('+(-tilt.y*1.2)+'deg) rotateY('+(tilt.x*1.2)+'deg)';
+}
+function rrect(x,y,w,h){var r=Math.min(w,h)/2;ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath()}
+var reduce=window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// ---------- Drehknöpfe ----------
+function setupKnob(el,axis){
+  var last=null, pid=null; // nur ein Finger pro Knopf
+  function ang(e){var r=el.getBoundingClientRect();return Math.atan2(e.clientY-(r.top+r.height/2),e.clientX-(r.left+r.width/2))*180/Math.PI}
+  el.addEventListener('pointerdown',function(e){if(mode!=='knob'||pid!==null)return;pid=e.pointerId;el.setPointerCapture(e.pointerId);last=ang(e);e.preventDefault()});
+  el.addEventListener('pointermove',function(e){if(e.pointerId!==pid||last===null)return;var a=ang(e),d=a-last;if(d>180)d-=360;if(d<-180)d+=360;last=a;setKnob(axis,knob[axis]+d)});
+  function up(e){if(e.pointerId!==pid)return;last=null;pid=null}
+  el.addEventListener('pointerup',up);el.addEventListener('pointercancel',up);
+  el.addEventListener('keydown',function(e){if(mode!=='knob')return;var d=e.key==='ArrowRight'||e.key==='ArrowUp'?10:e.key==='ArrowLeft'||e.key==='ArrowDown'?-10:0;if(d){setKnob(axis,knob[axis]+d);e.preventDefault()}});
+}
+function setKnob(axis,v){
+  knob[axis]=Math.max(-135,Math.min(135,v));
+  var el=$(axis==='x'?'knobX':'knobY');el.querySelector('.rot').style.transform='rotate('+knob[axis]+'deg)';el.setAttribute('aria-valuenow',Math.round(knob[axis]));
+  if(mode==='knob')tilt[axis]=knob[axis]/135*MAX_TILT;
+}
+
+// ---------- Gyro ----------
+// Bildschirmausrichtung robust bestimmen: iPad-Safari meldet sie nicht immer richtig.
+// Quer/hoch kommt aus Breite > Höhe, die Seite (90 oder 270) aus window.orientation bzw. screen.orientation.type.
+// gyroRot = manuelle Korrektur über den Knopf «Achsen drehen» (0/90/180/270).
+var gyroRot=(+store('kipp-gyro-rot')||0)%360;
+function orientAngle(){
+  var land=window.innerWidth>window.innerHeight, a=null, t=(screen.orientation&&screen.orientation.type)||'';
+  if(typeof window.orientation==='number')a=window.orientation;
+  else if(screen.orientation&&typeof screen.orientation.angle==='number')a=screen.orientation.angle;
+  a=(((a||0)%360)+360)%360;
+  if(land&&(a===0||a===180))a=t.indexOf('secondary')>=0?270:90;
+  if(!land&&(a===90||a===270))a=t.indexOf('secondary')>=0?180:0;
+  return (a+gyroRot)%360;
+}
+function readGyro(e){
+  if(e.beta==null||e.gamma==null)return;
+  var b=e.beta,g=e.gamma,a=orientAngle(),x,y;
+  if(a===90){x=b;y=-g}else if(a===270){x=-b;y=g}else if(a===180){x=-g;y=-b}else{x=g;y=b}
+  // Tiefpass gegen Sensorrauschen
+  if(!gyro.raw)gyro.raw={x:x,y:y};
+  else{gyro.raw.x+=(x-gyro.raw.x)*GYRO_SMOOTH;gyro.raw.y+=(y-gyro.raw.y)*GYRO_SMOOTH}
+  gyro.seen=true;
+  if(!gyro.base)gyro.base={x:x,y:y};
+}
+function onOrient(e){readGyro(e)}
+function startGyro(){
+  var D=window.DeviceOrientationEvent;
+  if(!D){toast('Dieses Gerät meldet keinen Lagesensor. Weiter mit den Drehknöpfen.');return}
+  function go(){
+    window.addEventListener('deviceorientation',onOrient);
+    gyro.on=true;gyro.seen=false;gyro.base=null;setMode('gyro');tilt.x=tilt.y=0;
+    clearTimeout(gyroT);
+    gyroT=setTimeout(function(){if(mode==='gyro'&&!gyro.seen){stopGyro();setMode('knob');
+      toast('Keine Sensordaten. Das iPad-Kippen geht nur in Safari über den https-Link. Weiter mit den Drehknöpfen.')}},1500);
+  }
+  if(typeof D.requestPermission==='function'){
+    D.requestPermission().then(function(s){if(s==='granted')go();else toast('Bewegung nicht erlaubt. In Safari: Seite neu laden und «Erlauben» tippen.')})
+      .catch(function(){toast('Safari hat die Anfrage abgelehnt. Bitte nochmals tippen.')});
+  }else go();
+}
+var gyroT=0;
+function stopGyro(){clearTimeout(gyroT);window.removeEventListener('deviceorientation',onOrient);gyro.on=false}
+// Beim Drehen des iPads (90° ↔ 270°) passt die alte Nullstellung nicht mehr: neu kalibrieren
+function onTurn(){gyro.base=null;setTimeout(fit,250)}
+window.addEventListener('orientationchange',onTurn);
+if(screen.orientation&&screen.orientation.addEventListener)screen.orientation.addEventListener('change',onTurn);
+// Totzone: kleine Abweichungen (Rauschen, Tisch nicht ganz eben) zählen als flach
+function dead(d){var m=Math.abs(d)-GYRO_DEAD;return m<=0?0:(d<0?-m:m)}
+function gyroTilt(){
+  if(!gyro.raw||!gyro.base){tilt.x=tilt.y=0;return}
+  var dx=gyro.raw.x-gyro.base.x, dy=gyro.raw.y-gyro.base.y;
+  tilt.x=Math.max(-MAX_TILT,Math.min(MAX_TILT,dead(dx)*GYRO_GAIN));
+  tilt.y=Math.max(-MAX_TILT,Math.min(MAX_TILT,dead(dy)*GYRO_GAIN));
+  $('dbg').textContent='Neigung '+dx.toFixed(1)+'° / '+dy.toFixed(1)+'° · '+orientAngle()+'°';
+}
+
+// ---------- Modus ----------
+function setMode(m){
+  mode=m;$('modeKnob').setAttribute('aria-pressed',m==='knob');$('modeGyro').setAttribute('aria-pressed',m==='gyro');
+  $('dbgwrap').hidden=m!=='gyro';$('axes').hidden=m!=='gyro';
+  $('knobX').classList.toggle('off',m!=='knob');$('knobY').classList.toggle('off',m!=='knob');
+  if(m==='knob'){tilt.x=knob.x/135*MAX_TILT;tilt.y=knob.y/135*MAX_TILT}
+}
+var toastT=0;
+function toast(msg){var t=$('toast');t.textContent=msg;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(function(){t.hidden=true},4200)}
+
+$('lvl0').onclick=function(){load(0)};$('lvl1').onclick=function(){load(1)};
+$('modeKnob').onclick=function(){stopGyro();setMode('knob')};
+$('modeGyro').onclick=function(){if(mode!=='gyro')startGyro()};
+$('calib').onclick=function(){
+  if(mode==='gyro'){if(gyro.raw){gyro.base={x:gyro.raw.x,y:gyro.raw.y};tilt.x=tilt.y=0;ball.vx=ball.vy=0;toast('Kalibriert: So wie du das iPad jetzt hältst, ist das Brett flach.')}}
+  else{setKnob('x',0);setKnob('y',0);toast('Drehknöpfe auf 0 gestellt.')}
+};
+$('axes').onclick=function(){
+  gyroRot=(gyroRot+90)%360;store('kipp-gyro-rot',String(gyroRot));
+  gyro.raw=null;gyro.base=null;tilt.x=tilt.y=0;ball.vx=ball.vy=0; // neue Zuordnung: Nullstellung neu nehmen
+  toast('Achsen um 90° gedreht (Korrektur '+gyroRot+'°). iPad flach halten, dann testen.');
+};
+$('restart').onclick=function(){reset(true)};
+$('again').onclick=function(){reset(true)};
+setupKnob($('knobX'),'x');setupKnob($('knobY'),'y');
+document.addEventListener('gesturestart',function(e){e.preventDefault()});
+
+// ---------- Schleife ----------
+var lastT=performance.now();
+function loop(now){
+  var dt=Math.min(0.05,(now-lastT)/1000);lastT=now;
+  if(mode==='gyro')gyroTilt();
+  step(dt);
+  if(running){elapsed=(now-t0)/1000;$('time').textContent=elapsed.toFixed(1);$('falls').textContent=falls}
+  draw();requestAnimationFrame(loop);
+}
+window.addEventListener('resize',fit);
+if(window.ResizeObserver)new ResizeObserver(fit).observe($('stage'));
+if(document.fonts&&document.fonts.ready)document.fonts.ready.then(fit);
+makeGrain();load(0);fit();requestAnimationFrame(loop);
+window.__kipp={build:buildLevel,levels:LEVELS,ball:ball,tilt:tilt,state:function(){return{falls:falls,won:won,elapsed:elapsed,mode:mode}}};
+})();
+</script>
+
+</body></html>
